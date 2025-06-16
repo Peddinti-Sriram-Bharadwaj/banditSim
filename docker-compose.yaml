@@ -1,14 +1,11 @@
-# docker-compose.yaml (Final Version with Redis)
+# docker-compose.yaml (Final Version with Orchestrator)
 
 services:
-  # NEW: The Redis in-memory data store
   redis:
-    image: "redis:alpine" # Use a lightweight official Redis image
-    container_name: redis-db
+    image: "redis:alpine"
     networks:
       - bandit-net
 
-  # The Slot Machine API Service (no changes)
   slot-machine-api:
     build:
       context: .
@@ -18,21 +15,18 @@ services:
     networks:
       - bandit-net
 
-  # The RL Agent - now connects to Redis
   rl-agent:
     build:
       context: .
       dockerfile: src/rl_agent/Dockerfile
     deploy:
-      replicas: 1
+      replicas: 10
     depends_on:
       - slot-machine-api
-      - redis # Add dependency on Redis
+      - redis
     networks:
       - bandit-net
-    # The 'volumes' section is now removed from the agent
 
-  # The Visualizer - now connects to Redis
   visualizer:
     build:
       context: .
@@ -41,13 +35,20 @@ services:
       - "5001:5000"
     depends_on:
       - redis
+      - slot-machine-api # Visualizer also needs the arm configs now
     networks:
       - bandit-net
-    # The 'volumes' section is now removed from the visualizer
+  
+  # NEW: The Orchestrator Service
+  orchestrator:
+    build:
+      context: .
+      dockerfile: src/orchestrator/Dockerfile
+    depends_on:
+      - rl-agent # Wait for agents to start before monitoring
+    networks:
+      - bandit-net
 
 networks:
   bandit-net:
     driver: bridge
-
-# We no longer need the top-level 'volumes' declaration for agent-data
-# as it's been replaced by Redis.
