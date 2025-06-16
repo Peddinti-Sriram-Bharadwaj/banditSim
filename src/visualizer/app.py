@@ -5,12 +5,16 @@ import json
 import numpy as np
 from flask import Flask, render_template, jsonify
 import redis
+import os
+
 
 app = Flask(__name__)
 
 # --- Configuration ---
-API_URL = "http://slot-machine-api:8000"
-REDIS_HOST = "redis"
+# --- MODIFIED: Read config from environment variables ---
+API_URL = os.getenv("API_BASE_URL", "http://slot-machine-api:8000")
+REDIS_HOST = os.getenv("REDIS_HOST", "redis")
+# --------------------------------------------------------
 REDIS_PORT = 6379
 NUM_SAMPLES_FOR_PLOT = 1000
 PLOT_Y_AXIS_RANGE = [-5, 8] # Slightly increased range for the new 'easy' config

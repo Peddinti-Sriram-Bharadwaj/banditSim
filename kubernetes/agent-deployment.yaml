@@ -1,0 +1,27 @@
+# kubernetes/agent-deployment.yaml
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-deployment
+spec:
+  replicas: 10
+  selector:
+    matchLabels:
+      app: rl-agent
+  template:
+    metadata:
+      labels:
+        app: rl-agent
+    spec:
+      containers:
+      - name: rl-agent-container
+        image: rl-agent:latest
+        imagePullPolicy: IfNotPresent
+        # MODIFIED: Let's explicitly set the environment variables
+        # instead of using envFrom, to be 100% sure.
+        env:
+        - name: API_BASE_URL
+          value: "http://api-service:8000"
+        - name: REDIS_HOST
+          value: "redis-service"

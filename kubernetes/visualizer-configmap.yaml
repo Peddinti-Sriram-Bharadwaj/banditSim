@@ -1,0 +1,9 @@
+# kubernetes/visualizer-configmap.yaml
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: visualizer-config
+data:
+  REDIS_HOST: "redis-service"
+  API_BASE_URL: "http://api-service:8000"

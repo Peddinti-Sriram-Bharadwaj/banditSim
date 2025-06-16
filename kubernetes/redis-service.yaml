@@ -1,0 +1,19 @@
+# kubernetes/redis-service.yaml
+
+apiVersion: v1
+kind: Service
+metadata:
+  # The name of the Service, which will also be its internal DNS name.
+  # Our other apps will connect to "redis-service".
+  name: redis-service
+spec:
+  selector:
+    # This Service will route traffic to any pod with the label "app: redis".
+    # This links the Service to the pods created by our Deployment.
+    app: redis
+  ports:
+    - protocol: TCP
+      # The port that the Service will be available on.
+      port: 6379
+      # The port on the target pod that the traffic will be forwarded to.
+      targetPort: 6379

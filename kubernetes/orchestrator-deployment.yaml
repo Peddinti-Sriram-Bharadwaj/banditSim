@@ -1,0 +1,23 @@
+# kubernetes/orchestrator-deployment.yaml
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orchestrator-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: orchestrator
+  template:
+    metadata:
+      labels:
+        app: orchestrator
+    spec:
+      containers:
+      - name: orchestrator-container
+        image: orchestrator:latest
+        imagePullPolicy: IfNotPresent
+        envFrom:
+        - configMapRef:
+            name: orchestrator-config

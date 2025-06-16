@@ -1,0 +1,29 @@
+# kubernetes/redis-deployment.yaml
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  # The name of the Deployment object itself
+  name: redis-deployment
+spec:
+  # We only need one replica of our Redis database
+  replicas: 1
+  selector:
+    # This selector tells the Deployment which pods to manage.
+    # It looks for pods with the label "app: redis".
+    matchLabels:
+      app: redis
+  template:
+    # This is the template for the pods that will be created.
+    metadata:
+      # The pods will be created with this label, so the selector can find them.
+      labels:
+        app: redis
+    spec:
+      containers:
+      - name: redis
+        # The official, lightweight Redis image from Docker Hub
+        image: redis:alpine
+        ports:
+        # Inform Kubernetes that the container listens on port 6379
+        - containerPort: 6379

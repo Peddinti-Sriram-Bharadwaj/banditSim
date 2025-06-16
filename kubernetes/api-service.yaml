@@ -1,0 +1,24 @@
+# kubernetes/api-service.yaml
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-service
+spec:
+  # NEW: We are setting the type to NodePort.
+  # ClusterIP (the default): Exposes the service only inside the cluster. (Good for Redis)
+  # NodePort: Exposes the service on a static port on each Node's IP address. (Good for external dev access)
+  # LoadBalancer: Provisions a cloud load balancer. (Good for production)
+  type: NodePort
+  selector:
+    # Route traffic to pods with the label "app: slot-machine-api"
+    app: slot-machine-api
+  ports:
+    - protocol: TCP
+      # The port inside the cluster that the service is available on.
+      port: 8000
+      # The port on the pods to forward traffic to.
+      targetPort: 8000
+      # An optional static port to expose on the node. Must be in the 30000-32767 range.
+      # If omitted, Kubernetes will pick a random one.
+      nodePort: 30080

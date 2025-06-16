@@ -1,0 +1,25 @@
+# kubernetes/visualizer-deployment.yaml
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: visualizer-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: visualizer
+  template:
+    metadata:
+      labels:
+        app: visualizer
+    spec:
+      containers:
+      - name: visualizer-container
+        image: visualizer:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 5000
+        envFrom:
+        - configMapRef:
+            name: visualizer-config

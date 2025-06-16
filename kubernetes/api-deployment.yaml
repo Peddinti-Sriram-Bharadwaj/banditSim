@@ -1,0 +1,26 @@
+# kubernetes/api-deployment.yaml
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-deployment
+spec:
+  # For a stateless API, we could easily run more replicas, but 1 is fine for now.
+  replicas: 1
+  selector:
+    matchLabels:
+      app: slot-machine-api
+  template:
+    metadata:
+      labels:
+        app: slot-machine-api
+    spec:
+      containers:
+      - name: slot-machine-api-container
+        # This is the name and tag of the custom image we will build.
+        image: slot-machine-api:latest
+        # This policy tells Kubernetes not to try pulling from a remote registry
+        # if the image is already present locally (e.g., in Minikube's cache).
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8000

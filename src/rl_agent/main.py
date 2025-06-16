@@ -8,7 +8,6 @@ import random
 
 from agent import ThompsonSamplingAgent
 from config import API_BASE_URL, REDIS_HOST, REDIS_PORT
-API_URL = "http://slot-machine-api:8000"
 
 def get_arm_ids_from_api(api_url: str) -> list[str]:
     """
@@ -70,7 +69,7 @@ def main():
         # --- END MODIFIED SECTION ---
 
         try:
-            response = requests.get(f"{API_URL}/choose_arm", params={'arm_id': selected_arm})
+            response = requests.get(f"{API_BASE_URL}/choose_arm", params={'arm_id': selected_arm})
             response.raise_for_status()
             result = response.json()
             reward = result['reward']

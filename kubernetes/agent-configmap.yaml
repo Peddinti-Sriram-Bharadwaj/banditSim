@@ -1,0 +1,11 @@
+# kubernetes/agent-configmap.yaml
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agent-config
+data:
+  # These values will become environment variables inside the agent containers.
+  # Note that we use the names of the Kubernetes 'Service' objects we are creating.
+  REDIS_HOST: "redis-service"
+  API_BASE_URL: "http://api-service:8000"

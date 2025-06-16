@@ -6,11 +6,14 @@ import time
 import sys
 import requests
 from collections import deque
+import os
 
 # --- Configuration ---
-REDIS_HOST = "redis"
+# --- MODIFIED: Read config from environment variables ---
+REDIS_HOST = os.getenv("REDIS_HOST", "redis")
+API_URL = os.getenv("API_BASE_URL", "http://slot-machine-api:8000")
+# --------------------------------------------------------
 REDIS_PORT = 6379
-API_URL = "http://slot-machine-api:8000"
 CHECK_INTERVAL_SECONDS = 10
 CONVERGENCE_THRESHOLD = 0.01
 CONVERGENCE_DURATION_CHECKS = 5
