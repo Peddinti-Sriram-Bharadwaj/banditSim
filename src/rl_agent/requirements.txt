@@ -1,4 +1,4 @@
-# src/rl_agent/requirements.txt
 numpy
 scipy
 requests
+redis

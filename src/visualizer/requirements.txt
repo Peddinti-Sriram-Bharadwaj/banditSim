@@ -1,5 +1,5 @@
-# src/visualizer/requirements.txt
 Flask
 requests
 numpy
 scipy
+redis

@@ -20,26 +20,14 @@
     </div>
 
     <script>
-        // Data passed from Flask backend will be securely embedded here
-        const groundTruthData = {{ ground_truth_data | tojson }};
-        const agentBeliefsData = {{ agent_beliefs_data | tojson }};
+        // Parse the JSON data passed from the Flask backend
+        const groundTruthPlot = {{ ground_truth_plot_json | tojson }};
+    const agentBeliefsPlot = {{ agent_beliefs_plot_json | tojson }};
 
-        // --- Plot for Ground Truth ---
-        const truthLayout = {
-            title: '<b>Ground Truth Reward Distributions</b>',
-            yaxis: { title: 'Reward Value', zeroline: true },
-            xaxis: { title: 'Slot Machine Arm' }
-        };
-        Plotly.newPlot('ground-truth-plot', groundTruthData, truthLayout);
-
-        // --- Plot for Agent Beliefs ---
-        const beliefsLayout = {
-            title: '<b>Agent\'s Learned Beliefs</b> (Sampled)',
-            yaxis: { title: 'Expected Reward (Sampled)', zeroline: true },
-            xaxis: { title: 'Slot Machine Arm' }
-        };
-        Plotly.newPlot('agent-beliefs-plot', agentBeliefsData, beliefsLayout);
-
+        // The JavaScript is now much simpler. It just renders the objects
+        // that the Python backend prepared for it.
+        Plotly.newPlot('ground-truth-plot', groundTruthPlot.data, groundTruthPlot.layout);
+        Plotly.newPlot('agent-beliefs-plot', agentBeliefsPlot.data, agentBeliefsPlot.layout);
     </script>
 </body>
 </html>

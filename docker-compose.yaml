@@ -1,5 +1,14 @@
-# docker-compose.yaml (Scaling Enabled)
+# docker-compose.yaml (Final Version with Redis)
+
 services:
+  # NEW: The Redis in-memory data store
+  redis:
+    image: "redis:alpine" # Use a lightweight official Redis image
+    container_name: redis-db
+    networks:
+      - bandit-net
+
+  # The Slot Machine API Service (no changes)
   slot-machine-api:
     build:
       context: .
@@ -9,19 +18,21 @@ services:
     networks:
       - bandit-net
 
+  # The RL Agent - now connects to Redis
   rl-agent:
     build:
       context: .
       dockerfile: src/rl_agent/Dockerfile
     deploy:
-      replicas: 10 # Scaling back to 10 instances
+      replicas: 1
     depends_on:
       - slot-machine-api
-    volumes:
-      - agent-data:/data
+      - redis # Add dependency on Redis
     networks:
       - bandit-net
+    # The 'volumes' section is now removed from the agent
 
+  # The Visualizer - now connects to Redis
   visualizer:
     build:
       context: .
@@ -29,16 +40,14 @@ services:
     ports:
       - "5001:5000"
     depends_on:
-      - rl-agent
-    volumes:
-      - agent-data:/data:ro
+      - redis
     networks:
       - bandit-net
+    # The 'volumes' section is now removed from the visualizer
 
 networks:
   bandit-net:
     driver: bridge
 
-volumes:
-  agent-data:
-    driver: local
+# We no longer need the top-level 'volumes' declaration for agent-data
+# as it's been replaced by Redis.

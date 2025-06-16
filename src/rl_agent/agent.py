@@ -1,98 +1,85 @@
-# src/rl_agent/agent.py
+# src/rl_agent/agent.py (Refactored for Redis)
 
-import os
-import json
+import redis
 import numpy as np
-from scipy.stats import gamma
 
 class ThompsonSamplingAgent:
-    """
-    An agent that uses Thompson Sampling to solve the K-armed bandit problem
-    with Gaussian rewards where both mean and variance are unknown.
-    """
-
-    def __init__(self, arm_ids: list[str], state_file_path: str):
-        """
-        Initializes the agent.
-
-        :param arm_ids: A list of strings identifying each arm.
-        :param state_file_path: Path to the JSON file for saving/loading state.
-        """
+    def __init__(self, arm_ids: list[str], redis_client: redis.Redis):
         self.arm_ids = arm_ids
-        self.state_file_path = state_file_path
-        self.beliefs = {}
-        self._load_or_initialize_state()
+        self.redis = redis_client
+        self._initialize_state_in_redis()
 
-    def _load_or_initialize_state(self):
-        """Loads beliefs from the state file or initializes them if not found."""
-        if os.path.exists(self.state_file_path):
-            print("INFO: Loading existing agent state.")
-            with open(self.state_file_path, 'r') as f:
-                self.beliefs = json.load(f)
-        else:
-            print("INFO: No state file found. Initializing new agent state.")
-            # For a Gaussian with unknown mean and variance, the conjugate prior
-            # is the Normal-Gamma distribution, defined by 4 parameters.
-            # We initialize with weak priors.
+    def _initialize_state_in_redis(self):
+        """Checks if beliefs exist in Redis for arm '0', if not, initializes all."""
+        # Use a transaction to check and set initial values atomically if needed.
+        pipe = self.redis.pipeline()
+        pipe.exists(f"arm:{self.arm_ids[0]}")
+        exists = pipe.execute()[0]
+
+        if not exists:
+            print("INFO: No belief state found in Redis. Initializing new state.")
+            # Initialize with our tuned 'uninformative' priors
+            initial_beliefs = {
+                'mu': '0.0', 'nu': '1.0', 'alpha': '0.2', 'beta': '0.2'
+            }
             for arm_id in self.arm_ids:
-                self.beliefs[arm_id] = {
-                    'mu': 0.0,      # Prior mean
-                    'nu': 1.0,      # Prior count of observations for mean
-                    'alpha': 0.2,   # Prior shape for precision
-                    'beta': 0.2,    # Prior rate for precision
-                }
-            self.save_state()
-
-    def save_state(self):
-        """Saves the agent's current beliefs to the state file."""
-        # Ensure the directory exists
-        os.makedirs(os.path.dirname(self.state_file_path), exist_ok=True)
-        with open(self.state_file_path, 'w') as f:
-            json.dump(self.beliefs, f, indent=4)
-        # print(f"DEBUG: Agent state saved to {self.state_file_path}")
-
-    # Inside src/rl_agent/agent.py
+                # Store beliefs for each arm in a Redis Hash
+                self.redis.hset(f"arm:{arm_id}", mapping=initial_beliefs)
+            print("INFO: New state initialized in Redis.")
+        else:
+            print("INFO: Existing belief state found in Redis.")
 
     def select_arm(self) -> str:
-        """
-        Selects an arm by sampling from the posterior distribution of each arm's
-        expected reward and choosing the one with the highest sample.
-        """
+        """Selects an arm by sampling from the posterior distribution."""
         sampled_means = []
         for arm_id in self.arm_ids:
-            params = self.beliefs[arm_id]
+            # HGETALL retrieves the hash for an arm's beliefs
+            # All values in Redis are stored as bytestrings, so we must decode
+            params_raw = self.redis.hgetall(f"arm:{arm_id}")
+            params = {k.decode(): float(v.decode()) for k, v in params_raw.items()}
 
-            # 1. Sample precision (tau) from the Gamma distribution
             tau = np.random.gamma(shape=params['alpha'], scale=1.0/params['beta'])
-
-            # 2. Sample mean (mu) from the Normal distribution, conditional on tau
             std_dev = 1.0 / np.sqrt(params['nu'] * tau)
             mu = np.random.normal(loc=params['mu'], scale=std_dev)
-
             sampled_means.append(mu)
-
-        # --- THIS IS THE NEW LINE TO ADD ---
-        print(f"DEBUG: Sampled values for argmax: {np.round(sampled_means, 2)}")
-        # ------------------------------------
 
         best_arm_index = np.argmax(sampled_means)
         return self.arm_ids[best_arm_index]
 
     def update_belief(self, arm_id: str, reward: float):
-        """
-        Updates the belief parameters for the chosen arm based on the observed reward.
+        """Updates belief parameters in Redis for the chosen arm."""
+        arm_key = f"arm:{arm_id}"
         
-        :param arm_id: The ID of the arm that was chosen.
-        :param reward: The reward received from that arm.
-        """
-        params = self.beliefs[arm_id]
-        mu_prev, nu_prev, alpha_prev, beta_prev = params['mu'], params['nu'], params['alpha'], params['beta']
+        # Use a transaction (pipeline) for atomicity
+        with self.redis.pipeline() as pipe:
+            while True:
+                try:
+                    # Watch the key for changes from other agents
+                    pipe.watch(arm_key)
+                    
+                    # Get current belief values
+                    params_raw = pipe.hgetall(arm_key)
+                    params = {k.decode(): float(v.decode()) for k, v in params_raw.items()}
+                    mu_prev, nu_prev, alpha_prev, beta_prev = params['mu'], params['nu'], params['alpha'], params['beta']
+                    
+                    # Start the transaction
+                    pipe.multi()
 
-        # Apply the standard Bayesian update rules for the Normal-Gamma posterior
-        params['mu'] = (nu_prev * mu_prev + reward) / (nu_prev + 1)
-        params['alpha'] = alpha_prev + 0.5
-        params['beta'] = beta_prev + (nu_prev * (reward - mu_prev)**2) / (2 * (nu_prev + 1))
-        params['nu'] = nu_prev + 1
-        
-        self.beliefs[arm_id] = params
-        # print(f"DEBUG: Updated arm {arm_id} with reward {reward}. New beliefs: {params}")
+                    # Calculate new values
+                    mu_new = (nu_prev * mu_prev + reward) / (nu_prev + 1)
+                    alpha_new = alpha_prev + 0.5
+                    beta_new = beta_prev + (nu_prev * (reward - mu_prev)**2) / (2 * (nu_prev + 1))
+                    nu_new = nu_prev + 1
+                    
+                    # Set the new values in the hash
+                    pipe.hset(arm_key, "mu", mu_new)
+                    pipe.hset(arm_key, "nu", nu_new)
+                    pipe.hset(arm_key, "alpha", alpha_new)
+                    pipe.hset(arm_key, "beta", beta_new)
+                    
+                    # Execute the transaction
+                    pipe.execute()
+                    break # Success
+                except redis.WatchError:
+                    # Another agent modified the key while we were working. Retry.
+                    continue
