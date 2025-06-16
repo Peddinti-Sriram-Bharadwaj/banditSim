@@ -1,16 +1,21 @@
 # src/slot_machine_api/config.py
 
-# This dictionary holds the "ground truth" for our slot machine arms.
-# Each arm is defined by a mean (mu) and a standard deviation (sigma),
-# which control the Gaussian (normal) distribution of its rewards.
-#
-# A higher mean indicates a better arm on average.
-# A higher standard deviation indicates more risk/variance in the rewards.
+# This dictionary holds a more challenging "ground truth" for our slot machine arms.
+# The goal is to make it harder for the Thompson Sampling agent to be certain
+# which arm is truly the best without significant exploration.
 
 ARM_CONFIGS = {
-    "0": {"mean": 2.5, "std_dev": 1.0},
-    "1": {"mean": 3.5, "std_dev": 1.5},  # The best arm, but with some risk
-    "2": {"mean": 1.0, "std_dev": 0.5},  # A safe, but low-reward arm
-    "3": {"mean": 0.0, "std_dev": 2.0},  # A high-risk, low-reward arm
-    "4": {"mean": -1.0, "std_dev": 0.2}  # A consistently bad arm
+    "0": {"mean": 2.8, "std_dev": 0.8},  # The "Safe Bet": Consistently good, but not the best.
+    
+    "1": {"mean": 3.0, "std_dev": 3.0},  # The "High-Risk, High-Reward" Winner: Best on average, but very volatile.
+                                        # Its rewards will frequently overlap with other arms.
+
+    "2": {"mean": 2.2, "std_dev": 0.3},  # The "Good Enough" Trap: Very low variance, so it seems reliable.
+                                        # An agent might lock onto this for a while and stop exploring.
+
+    "3": {"mean": 0.5, "std_dev": 5.0},  # The "Lottery Ticket": Almost always bad, but a very high standard
+                                        # deviation means it could rarely give a massive payout, confusing the agent.
+
+    "4": {"mean": -0.5, "std_dev": 0.5}  # The Clear Loser: Consistently bad, to ensure the agent can still
+                                        # learn to avoid obviously poor choices.
 }
