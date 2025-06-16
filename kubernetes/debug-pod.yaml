@@ -1,0 +1,12 @@
+# kubernetes/debug-pod.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: net-debug
+spec:
+  containers:
+  - name: net-debug-container
+    # This image contains many useful networking tools
+    image: "docker.io/nicolaka/netshoot:latest"
+    # This command keeps the pod running indefinitely
+    command: ["/bin/sh", "-c", "sleep 1d"]
