@@ -1,40 +1,44 @@
-# docker-compose.yaml
-
-version: '3.8'
-
+# docker-compose.yaml (Scaling Enabled)
 services:
-  # The Slot Machine API Service
   slot-machine-api:
     build:
       context: .
       dockerfile: src/slot_machine_api/Dockerfile
-    container_name: slot-machine-api-1
     ports:
-      - "8000:8000" # Map host port 8000 to container port 8000
+      - "8000:8000"
     networks:
       - bandit-net
 
-  # The Reinforcement Learning Agent Service
   rl-agent:
     build:
       context: .
       dockerfile: src/rl_agent/Dockerfile
-    container_name: rl-agent-1
-    # 'depends_on' ensures the API container starts before the agent container
+    deploy:
+      replicas: 10 # Scaling back to 10 instances
     depends_on:
       - slot-machine-api
-    # Mount the 'agent-data' volume to persist the agent's state
     volumes:
       - agent-data:/data
     networks:
       - bandit-net
 
-# Define the network that allows containers to communicate by service name
+  visualizer:
+    build:
+      context: .
+      dockerfile: src/visualizer/Dockerfile
+    ports:
+      - "5001:5000"
+    depends_on:
+      - rl-agent
+    volumes:
+      - agent-data:/data:ro
+    networks:
+      - bandit-net
+
 networks:
   bandit-net:
     driver: bridge
 
-# Define the volume that will store our agent's persistent data
 volumes:
   agent-data:
     driver: local

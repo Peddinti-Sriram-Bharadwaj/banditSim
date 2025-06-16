@@ -38,8 +38,8 @@ class ThompsonSamplingAgent:
                 self.beliefs[arm_id] = {
                     'mu': 0.0,      # Prior mean
                     'nu': 1.0,      # Prior count of observations for mean
-                    'alpha': 1.0,   # Prior shape for precision
-                    'beta': 1.0,    # Prior rate for precision
+                    'alpha': 0.2,   # Prior shape for precision
+                    'beta': 0.2,    # Prior rate for precision
                 }
             self.save_state()
 
@@ -51,6 +51,8 @@ class ThompsonSamplingAgent:
             json.dump(self.beliefs, f, indent=4)
         # print(f"DEBUG: Agent state saved to {self.state_file_path}")
 
+    # Inside src/rl_agent/agent.py
+
     def select_arm(self) -> str:
         """
         Selects an arm by sampling from the posterior distribution of each arm's
@@ -59,17 +61,19 @@ class ThompsonSamplingAgent:
         sampled_means = []
         for arm_id in self.arm_ids:
             params = self.beliefs[arm_id]
-            
+
             # 1. Sample precision (tau) from the Gamma distribution
-            # The scale parameter for numpy's gamma is 1/rate (1/beta).
             tau = np.random.gamma(shape=params['alpha'], scale=1.0/params['beta'])
-            
+
             # 2. Sample mean (mu) from the Normal distribution, conditional on tau
-            # The scale parameter for numpy's normal is std_dev = 1 / sqrt(nu * tau)
             std_dev = 1.0 / np.sqrt(params['nu'] * tau)
             mu = np.random.normal(loc=params['mu'], scale=std_dev)
-            
+
             sampled_means.append(mu)
+
+        # --- THIS IS THE NEW LINE TO ADD ---
+        print(f"DEBUG: Sampled values for argmax: {np.round(sampled_means, 2)}")
+        # ------------------------------------
 
         best_arm_index = np.argmax(sampled_means)
         return self.arm_ids[best_arm_index]

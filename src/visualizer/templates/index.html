@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>K-Armed Bandit Simulation</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 40px; background-color: #f8f9fa; }
+        h1 { color: #343a40; }
+        .chart-container { display: flex; flex-wrap: wrap; justify-content: space-around; }
+        .chart { width: 48%; min-width: 500px; margin-top: 20px; box-shadow: 0 4px 8px 0 rgba(0,0,0,0.2); transition: 0.3s; background-color: white; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <h1>K-Armed Bandit Simulation Dashboard</h1>
+    <div class="chart-container">
+        <div id="ground-truth-plot" class="chart"></div>
+        <div id="agent-beliefs-plot" class="chart"></div>
+    </div>
+
+    <script>
+        // Data passed from Flask backend will be securely embedded here
+        const groundTruthData = {{ ground_truth_data | tojson }};
+        const agentBeliefsData = {{ agent_beliefs_data | tojson }};
+
+        // --- Plot for Ground Truth ---
+        const truthLayout = {
+            title: '<b>Ground Truth Reward Distributions</b>',
+            yaxis: { title: 'Reward Value', zeroline: true },
+            xaxis: { title: 'Slot Machine Arm' }
+        };
+        Plotly.newPlot('ground-truth-plot', groundTruthData, truthLayout);
+
+        // --- Plot for Agent Beliefs ---
+        const beliefsLayout = {
+            title: '<b>Agent\'s Learned Beliefs</b> (Sampled)',
+            yaxis: { title: 'Expected Reward (Sampled)', zeroline: true },
+            xaxis: { title: 'Slot Machine Arm' }
+        };
+        Plotly.newPlot('agent-beliefs-plot', agentBeliefsData, beliefsLayout);
+
+    </script>
+</body>
+</html>
