@@ -1,32 +1,42 @@
-# docker-compose.yaml (Final Version with Orchestrator)
+# docker-compose.yaml (Corrected with consistent networking)
 
 services:
+  # The Redis in-memory data store
   redis:
     image: "redis:alpine"
+    # This service must be on the network
     networks:
       - bandit-net
 
+  # The Slot Machine API Service
   slot-machine-api:
     build:
       context: .
       dockerfile: src/slot_machine_api/Dockerfile
     ports:
       - "8000:8000"
+    # This service must be on the network
     networks:
       - bandit-net
 
+  # The RL Agent Service
   rl-agent:
     build:
       context: .
       dockerfile: src/rl_agent/Dockerfile
     deploy:
       replicas: 10
+    links:
+      - slot-machine-api
+
     depends_on:
       - slot-machine-api
       - redis
+    # This service must be on the network
     networks:
       - bandit-net
 
+  # The Visualizer Service
   visualizer:
     build:
       context: .
@@ -35,20 +45,23 @@ services:
       - "5001:5000"
     depends_on:
       - redis
-      - slot-machine-api # Visualizer also needs the arm configs now
+      - slot-machine-api
+    # This service must be on the network
     networks:
       - bandit-net
   
-  # NEW: The Orchestrator Service
+  # The Orchestrator Service
   orchestrator:
     build:
       context: .
       dockerfile: src/orchestrator/Dockerfile
     depends_on:
-      - rl-agent # Wait for agents to start before monitoring
+      - rl-agent
+    # This service must be on the network
     networks:
       - bandit-net
 
+# This top-level key defines the custom network that all services will share
 networks:
   bandit-net:
     driver: bridge

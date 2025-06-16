@@ -1,21 +1,16 @@
 # src/slot_machine_api/config.py
 
-# This dictionary holds a more challenging "ground truth" for our slot machine arms.
-# The goal is to make it harder for the Thompson Sampling agent to be certain
-# which arm is truly the best without significant exploration.
+# This dictionary is designed to be "easy" for the system to solve,
+# allowing for quick and clear observation of the MLOps lifecycle.
 
 ARM_CONFIGS = {
-    "0": {"mean": 2.8, "std_dev": 0.8},  # The "Safe Bet": Consistently good, but not the best.
+    "0": {"mean": 1.5, "std_dev": 0.5},  # A clearly suboptimal, but positive arm.
     
-    "1": {"mean": 3.0, "std_dev": 3.0},  # The "High-Risk, High-Reward" Winner: Best on average, but very volatile.
-                                        # Its rewards will frequently overlap with other arms.
+    "1": {"mean": 5.0, "std_dev": 1.0},  # The undisputed BEST arm. Agents will lock onto this very quickly.
 
-    "2": {"mean": 2.2, "std_dev": 0.3},  # The "Good Enough" Trap: Very low variance, so it seems reliable.
-                                        # An agent might lock onto this for a while and stop exploring.
+    "2": {"mean": 0.5, "std_dev": 0.5},  # Another suboptimal arm.
 
-    "3": {"mean": 0.5, "std_dev": 5.0},  # The "Lottery Ticket": Almost always bad, but a very high standard
-                                        # deviation means it could rarely give a massive payout, confusing the agent.
-
-    "4": {"mean": -0.5, "std_dev": 0.5}  # The Clear Loser: Consistently bad, to ensure the agent can still
-                                        # learn to avoid obviously poor choices.
+    "3": {"mean": -1.0, "std_dev": 1.0}, # A clearly bad arm.
+    
+    "4": {"mean": -3.0, "std_dev": 0.5}  # The undisputed WORST arm.
 }

@@ -1,81 +1,132 @@
-# src/orchestrator/orchestrator.py
+# src/orchestrator/orchestrator.py (Final Polished Version)
 
 import redis
 import numpy as np
 import time
-import json
 import sys
+import requests
+from collections import deque
 
 # --- Configuration ---
 REDIS_HOST = "redis"
 REDIS_PORT = 6379
-API_URL = "http://slot-machine-api:8000" # To get the list of arms
-CHECK_INTERVAL_SECONDS = 10              # How often to check for convergence
-CONVERGENCE_THRESHOLD = 0.01             # Sum of belief changes must be below this
-CONVERGENCE_DURATION_CHECKS = 5          # Must be stable for this many consecutive checks
+API_URL = "http://slot-machine-api:8000"
+CHECK_INTERVAL_SECONDS = 10
+CONVERGENCE_THRESHOLD = 0.01
+CONVERGENCE_DURATION_CHECKS = 5
+DRIFT_WINDOW_SIZE = 50
+DRIFT_THRESHOLD_FACTOR = 0.7
+FORCED_EXPLORATION_SECONDS = 30 # Duration for the re-learning phase
 
-class ConvergenceDetector:
+class SystemMonitor:
     def __init__(self, redis_client, arm_ids):
         self.redis = redis_client
         self.arm_ids = arm_ids
+        self.mode = "CONVERGENCE_DETECTION"
         self.previous_beliefs = self._get_current_beliefs()
         self.consecutive_stable_checks = 0
-        self.has_converged = False
+        self.converged_best_arm = None
+        self.converged_belief_mean = None
+        self.recent_rewards = deque(maxlen=DRIFT_WINDOW_SIZE)
 
     def _get_current_beliefs(self):
-        """Fetches the full belief state from Redis."""
         beliefs = {}
         for arm_id in self.arm_ids:
             raw_belief = self.redis.hgetall(f"arm:{arm_id}")
-            if raw_belief: # Ensure belief exists before processing
+            if raw_belief:
                 beliefs[arm_id] = {k: float(v) for k, v in raw_belief.items()}
         return beliefs
 
-    def check(self):
-        """Checks for convergence and returns True if converged, False otherwise."""
-        if self.has_converged:
-            # Don't re-evaluate if we already declared convergence
-            return True
-
+    def check_convergence(self):
         current_beliefs = self._get_current_beliefs()
-        
-        # Don't check if either state is empty (can happen at startup)
         if not current_beliefs or not self.previous_beliefs:
             self.previous_beliefs = current_beliefs
-            return False
+            return
 
-        # Calculate the total change in belief means ('mu')
-        total_change = 0
-        for arm_id in self.arm_ids:
-            if arm_id in current_beliefs and arm_id in self.previous_beliefs:
-                change = abs(current_beliefs[arm_id]['mu'] - self.previous_beliefs[arm_id]['mu'])
-                total_change += change
-        
-        print(f"INFO: Beliefs change since last check: {total_change:.6f}")
+        total_change = sum(
+            abs(current_beliefs[arm_id]['mu'] - self.previous_beliefs[arm_id]['mu'])
+            for arm_id in self.arm_ids
+            if arm_id in current_beliefs and arm_id in self.previous_beliefs
+        )
+        print(f"INFO (CONVERGENCE): Beliefs change: {total_change:.6f}")
 
         if total_change < CONVERGENCE_THRESHOLD:
             self.consecutive_stable_checks += 1
-            print(f"INFO: Stable check #{self.consecutive_stable_checks}/{CONVERGENCE_DURATION_CHECKS}.")
+            print(f"INFO (CONVERGENCE): Stable check #{self.consecutive_stable_checks}/{CONVERGENCE_DURATION_CHECKS}.")
         else:
-            # Reset counter if change is too high
             self.consecutive_stable_checks = 0
-            print("INFO: Beliefs are still changing. Resetting stability counter.")
-            
-        # Update the state for the next check
+
         self.previous_beliefs = current_beliefs
 
         if self.consecutive_stable_checks >= CONVERGENCE_DURATION_CHECKS:
-            self.has_converged = True
-            return True
-        
-        return False
+            self.handle_convergence(current_beliefs)
 
-def get_arm_ids():
-    """Gets the list of arm IDs from the API, since it's the source of truth."""
-    # We use a simple requests call here for simplicity
-    import requests
+    def handle_convergence(self, converged_beliefs):
+        if not converged_beliefs: return
+        
+        self.converged_best_arm = max(converged_beliefs, key=lambda arm: converged_beliefs[arm]['mu'])
+        self.converged_belief_mean = converged_beliefs[self.converged_best_arm]['mu']
+        self.mode = "DRIFT_MONITORING"
+        self.redis.set("system:mode", "MONITORING")
+
+        # FIXED: Added 'f' for f-string formatting
+        print("\n" + "="*60)
+        print(f">>> SYSTEM CONVERGED on Arm {self.converged_best_arm} with believed mean {self.converged_belief_mean:.2f}")
+        print(">>> SWITCHING TO DRIFT MONITORING MODE.")
+        print("="*60 + "\n")
+
+    def check_drift(self):
+        last_reward_str = self.redis.get(f"arm:{self.converged_best_arm}:last_reward")
+        if last_reward_str:
+            self.recent_rewards.append(float(last_reward_str))
+            self.redis.delete(f"arm:{self.converged_best_arm}:last_reward")
+
+        if len(self.recent_rewards) < DRIFT_WINDOW_SIZE:
+            print(f"INFO (DRIFT): Collecting rewards for baseline... ({len(self.recent_rewards)}/{DRIFT_WINDOW_SIZE})")
+            return
+
+        current_avg_reward = sum(self.recent_rewards) / len(self.recent_rewards)
+        drift_threshold = self.converged_belief_mean * DRIFT_THRESHOLD_FACTOR
+        
+        print(f"INFO (DRIFT): Monitoring Arm {self.converged_best_arm}. Current Avg Reward: {current_avg_reward:.2f}, Drift Threshold: < {drift_threshold:.2f}")
+        
+        if current_avg_reward < drift_threshold:
+            self.handle_drift()
+
+    def handle_drift(self):
+        avg_reward = sum(self.recent_rewards) / len(self.recent_rewards) if self.recent_rewards else 0
+        drift_threshold_value = self.converged_belief_mean * DRIFT_THRESHOLD_FACTOR
+        
+        # FIXED: Added 'f' for f-string formatting
+        print("\n" + "!"*60)
+        print(f">>> DRIFT DETECTED on Arm {self.converged_best_arm}!")
+        print(f">>> Average reward {avg_reward:.2f} is below the threshold of {drift_threshold_value:.2f}.")
+        print(f">>> TRIGGERING SYSTEM-WIDE FORCED EXPLORATION for {FORCED_EXPLORATION_SECONDS} seconds.")
+        print("!"*60 + "\n")
+
+        # FIXED: Set mode to FORCED_EXPLORATION with an expiry for a clear re-learning phase.
+        self.redis.set("system:mode", "FORCED_EXPLORATION", ex=FORCED_EXPLORATION_SECONDS)
+        
+        initial_beliefs = {'mu': '0.0', 'nu': '1.0', 'alpha': '0.2', 'beta': '0.2'}
+        for arm_id in self.arm_ids:
+            self.redis.hset(f"arm:{arm_id}", mapping=initial_beliefs)
+        
+        self.mode = "CONVERGENCE_DETECTION"
+        self.previous_beliefs = self._get_current_beliefs()
+        self.consecutive_stable_checks = 0
+        self.recent_rewards.clear()
+        self.converged_best_arm = None
+        self.converged_belief_mean = None
+
+    def run(self):
+        if self.mode == "CONVERGENCE_DETECTION":
+            self.check_convergence()
+        elif self.mode == "DRIFT_MONITORING":
+            self.check_drift()
+
+def get_arm_ids_from_api(api_url: str):
     try:
-        response = requests.get(f"{API_URL}/get_arm_configs")
+        response = requests.get(f"{api_url}/get_arm_configs")
         response.raise_for_status()
         return sorted(response.json().keys())
     except Exception as e:
@@ -83,25 +134,20 @@ def get_arm_ids():
         return None
 
 def main():
-    print("--- Orchestrator Service Starting ---")
-    time.sleep(15) # Wait a bit for other services to be ready
-
-    arm_ids = get_arm_ids()
-    if not arm_ids:
-        sys.exit(1) # Exit if we can't get the configuration
-
+    print("--- Orchestrator Service Starting (v2.2 Final) ---")
+    time.sleep(15)
+    arm_ids = get_arm_ids_from_api(API_URL)
+    if not arm_ids: sys.exit(1)
+    
     redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
-    detector = ConvergenceDetector(redis_client=redis_client, arm_ids=arm_ids)
+    monitor = SystemMonitor(redis_client=redis_client, arm_ids=arm_ids)
     print("INFO: Orchestrator initialized. Monitoring for convergence...")
 
     while True:
-        if detector.check():
-            print("\n" + "="*50)
-            print(">>> SYSTEM CONVERGED: The agents have finished learning.")
-            print(">>> In a production system, an action like scaling down agents would be triggered now.")
-            print("="*50 + "\n")
-            # In a real system, you might break the loop or switch to drift detection mode.
-            # For our simulation, we'll just let it continue checking.
+        try:
+            monitor.run()
+        except Exception as e:
+            print(f"ERROR in monitor loop: {e}", file=sys.stderr)
         
         time.sleep(CHECK_INTERVAL_SECONDS)
 

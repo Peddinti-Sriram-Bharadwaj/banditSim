@@ -1,7 +1,8 @@
-# src/rl_agent/agent.py (Refactored for Redis)
+# src/rl_agent/agent.py (Final version with all modes)
 
 import redis
 import numpy as np
+import random
 
 class ThompsonSamplingAgent:
     def __init__(self, arm_ids: list[str], redis_client: redis.Redis):
@@ -17,69 +18,76 @@ class ThompsonSamplingAgent:
         exists = pipe.execute()[0]
 
         if not exists:
-            print("INFO: No belief state found in Redis. Initializing new state.")
-            # Initialize with our tuned 'uninformative' priors
-            initial_beliefs = {
-                'mu': '0.0', 'nu': '1.0', 'alpha': '0.2', 'beta': '0.2'
-            }
+            print("INFO: No belief state found in Redis. Initializing new agent state.")
+            initial_beliefs = {'mu': '0.0', 'nu': '1.0', 'alpha': '0.2', 'beta': '0.2'}
             for arm_id in self.arm_ids:
-                # Store beliefs for each arm in a Redis Hash
                 self.redis.hset(f"arm:{arm_id}", mapping=initial_beliefs)
             print("INFO: New state initialized in Redis.")
         else:
             print("INFO: Existing belief state found in Redis.")
 
-    def select_arm(self) -> str:
-        """Selects an arm by sampling from the posterior distribution."""
+    def select_arm(self, mode="LEARNING", epsilon=0.05) -> str:
+        """
+        Selects an arm based on the current system mode.
+        """
+        # --- NEW: Logic to handle all system modes ---
+        if mode == "FORCED_EXPLORATION":
+            # In this mode, ignore all beliefs and just pick a random arm.
+            return random.choice(self.arm_ids)
+        
+        if mode == "MONITORING" and random.random() < epsilon:
+            # In monitoring mode, 5% of the time, explore a random arm.
+            return random.choice(self.arm_ids)
+        # -----------------------------------------------
+
+        # Otherwise (in LEARNING mode or for the 95% exploitation in MONITORING),
+        # use Thompson Sampling as before.
         sampled_means = []
         for arm_id in self.arm_ids:
-            # HGETALL retrieves the hash for an arm's beliefs
-            # All values in Redis are stored as bytestrings, so we must decode
             params_raw = self.redis.hgetall(f"arm:{arm_id}")
-            params = {k.decode(): float(v.decode()) for k, v in params_raw.items()}
+            if not params_raw: continue # Skip if arm beliefs somehow don't exist
+            
+            params = {k.decode('utf-8'): float(v.decode('utf-8')) for k, v in params_raw.items()}
 
             tau = np.random.gamma(shape=params['alpha'], scale=1.0/params['beta'])
             std_dev = 1.0 / np.sqrt(params['nu'] * tau)
             mu = np.random.normal(loc=params['mu'], scale=std_dev)
             sampled_means.append(mu)
 
+        if not sampled_means:
+            return random.choice(self.arm_ids) # Fallback if no beliefs were found
+
         best_arm_index = np.argmax(sampled_means)
         return self.arm_ids[best_arm_index]
 
     def update_belief(self, arm_id: str, reward: float):
-        """Updates belief parameters in Redis for the chosen arm."""
+        """Updates belief parameters in Redis for the chosen arm using a transaction."""
         arm_key = f"arm:{arm_id}"
         
-        # Use a transaction (pipeline) for atomicity
         with self.redis.pipeline() as pipe:
             while True:
                 try:
-                    # Watch the key for changes from other agents
                     pipe.watch(arm_key)
                     
-                    # Get current belief values
                     params_raw = pipe.hgetall(arm_key)
-                    params = {k.decode(): float(v.decode()) for k, v in params_raw.items()}
+                    if not params_raw: break # Exit if the key was deleted mid-op
+                        
+                    params = {k.decode('utf-8'): float(v.decode('utf-8')) for k, v in params_raw.items()}
                     mu_prev, nu_prev, alpha_prev, beta_prev = params['mu'], params['nu'], params['alpha'], params['beta']
                     
-                    # Start the transaction
                     pipe.multi()
 
-                    # Calculate new values
                     mu_new = (nu_prev * mu_prev + reward) / (nu_prev + 1)
                     alpha_new = alpha_prev + 0.5
                     beta_new = beta_prev + (nu_prev * (reward - mu_prev)**2) / (2 * (nu_prev + 1))
                     nu_new = nu_prev + 1
                     
-                    # Set the new values in the hash
                     pipe.hset(arm_key, "mu", mu_new)
                     pipe.hset(arm_key, "nu", nu_new)
                     pipe.hset(arm_key, "alpha", alpha_new)
                     pipe.hset(arm_key, "beta", beta_new)
                     
-                    # Execute the transaction
                     pipe.execute()
-                    break # Success
+                    break
                 except redis.WatchError:
-                    # Another agent modified the key while we were working. Retry.
-                    continue
+                    continue # Retry if another agent changed the key
